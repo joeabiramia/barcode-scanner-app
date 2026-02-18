@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Barcode Scanner - Dashboard</title>
+  <!-- External libraries -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .user-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .user-name {
+      font-weight: 600;
+      color: #1a2b3c;
+    }
+    .logout-btn {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 2rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .logout-btn:hover {
+      background: #dc2626;
+    }
+    .excel-note {
+      font-size: 0.9rem;
+      color: #059669;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="user-header">
+      <h1>📷 Barcode Scanner</h1>
+<div class="user-info">
+  <span class="user-name" id="userDisplay"></span>
+  <a href="/admin.html" id="adminLink" style="display: none; margin-right: 1rem; color: #3b82f6; text-decoration: none; font-weight: 500;">👑 Admin Panel</a>
+  <button class="logout-btn" onclick="logout()">Logout</button>
+</div>
+    </div>
+    
+    <div class="subhead">offline scanner · date picker · excel export with user tracking</div>
+
+    <div class="grid-2">
+      <!-- LEFT: upload & preview -->
+      <div>
+        <div class="upload-area">
+          <div class="upload-icon">📦</div>
+          <label for="barcodeFile" class="file-label">Choose image with barcode</label>
+          <input type="file" id="barcodeFile" accept="image/*" capture="environment">
+          <div class="image-preview" id="imagePreview">
+            <span style="color:#7c8b9c;">preview will appear here</span>
+          </div>
+          <div class="badge" id="fileHint">supports QR, UPC, EAN, Code128 …</div>
+        </div>
+
+        <!-- extracted info panel -->
+        <div class="extracted-panel" id="extractPanel" style="display: none;">
+          <div class="label-sm">📋 extracted value (auto‑filled)</div>
+          <div class="value-edit">
+            <input type="text" id="barcodeInput" placeholder="barcode value" value="">
+          </div>
+          <div style="margin-top: 12px;" class="label-sm">📅 calendar</div>
+          <input type="date" id="datePicker" class="date-picker" style="width: 100%;">
+          <div style="margin-top: 16px;">
+            <button class="primary" id="addEntryBtn" style="width: 100%;">+ add row & prepare next</button>
+          </div>
+          <p style="font-size:0.8rem; margin-top:8px; color:#3b5f7a;">✨ after adding, everything resets – ready for next scan</p>
+        </div>
+
+        <!-- feedback area -->
+        <div id="scanMessage" style="margin-top: 1rem; min-height: 2.5rem;"></div>
+      </div>
+
+      <!-- RIGHT: current entries & download -->
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="badge" id="counterBadge">0 entries</span>
+          <button id="clearTableBtn">🗑 clear my entries</button>
+        </div>
+        <div class="table-wrapper">
+          <table id="dataTable">
+            <thead>
+              <tr>
+                <th>Barcode (A)</th>
+                <th>Date (B)</th>
+                <th>User</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+        <div class="action-row">
+          <button id="downloadExcelBtn" class="download-btn">⬇ Download My Excel</button>
+          <span style="font-size:0.85rem; color:#3b6e5e;">.xlsx · includes your name</span>
+        </div>
+        <div class="excel-note">
+          ⭐ Excel file will automatically include your name: <span id="excelUserName"></span>
+        </div>
+        <div style="background: #f0f9fe; border-radius: 1rem; padding: 0.8rem 1rem; margin-top: 1.2rem;">
+          <span style="font-weight:500;">💡 tip: </span> scan → auto‑fill → add → reset → next.
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-note">⚡ client-side only · ZXing + SheetJS · all entries saved per user</div>
+  </div>
+
+  <!-- Custom JavaScript -->
+  <script src="app.js"></script>
+</body>
+</html>

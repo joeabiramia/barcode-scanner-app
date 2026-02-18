@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  barcode-scanner:
+    build: .
+    container_name: barcode-scanner-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=your-secret-key-change-this
+      - DATA_DIR=/data
+    volumes:
+      - barcode-data:/data
+    restart: unless-stopped
+
+volumes:
+  barcode-data:
+    name: barcode-scanner-data

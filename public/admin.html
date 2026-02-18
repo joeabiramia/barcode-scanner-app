@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Barcode Scanner - Admin Panel</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .admin-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .admin-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 2px solid #e2e8f0;
+    }
+    .admin-title {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .admin-title h1 {
+      margin: 0;
+    }
+    .back-btn {
+      background: #64748b;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 2rem;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .back-btn:hover {
+      background: #475569;
+    }
+    .user-form-card {
+      background: #f8fafc;
+      border-radius: 1.5rem;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      border: 1px solid #e2e8f0;
+    }
+    .user-form-card h2 {
+      color: #1a2b3c;
+      margin-bottom: 1.5rem;
+      font-size: 1.3rem;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+    }
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: #4a5f73;
+      font-weight: 500;
+      font-size: 0.9rem;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 0.8rem 1rem;
+      border: 2px solid #e2e8f0;
+      border-radius: 1rem;
+      font-size: 0.95rem;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: #3b82f6;
+    }
+    .btn-create {
+      background: #059669;
+      color: white;
+      border: none;
+      padding: 0.8rem 2rem;
+      border-radius: 2rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 1.5rem;
+      width: 100%;
+      font-size: 1rem;
+    }
+    .btn-create:hover {
+      background: #047857;
+    }
+    .users-table-card {
+      background: white;
+      border-radius: 1.5rem;
+      padding: 1.5rem;
+      border: 1px solid #e2e8f0;
+    }
+    .users-table-card h2 {
+      color: #1a2b3c;
+      margin-bottom: 1.5rem;
+      font-size: 1.3rem;
+    }
+    .table-wrapper {
+      max-height: 400px;
+      overflow-y: auto;
+      border-radius: 1rem;
+      border: 1px solid #e2e8f0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th {
+      background: #f1f5f9;
+      padding: 1rem 0.5rem;
+      font-weight: 600;
+      color: #1e3a5f;
+      position: sticky;
+      top: 0;
+    }
+    td {
+      padding: 0.8rem 0.5rem;
+      border-top: 1px solid #ecf1f7;
+    }
+    .role-badge {
+      padding: 0.25rem 0.75rem;
+      border-radius: 2rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .role-admin {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .role-user {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .delete-btn {
+      background: #ef4444;
+      color: white;
+      border: none;
+      padding: 0.3rem 0.8rem;
+      border-radius: 1rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .delete-btn:hover {
+      background: #dc2626;
+    }
+    .delete-btn:disabled {
+      background: #fca5a5;
+      cursor: not-allowed;
+    }
+    .message {
+      padding: 1rem;
+      border-radius: 1rem;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .message.success {
+      background: #d1fae5;
+      color: #065f46;
+      display: block;
+    }
+    .message.error {
+      background: #fee2e2;
+      color: #991b1b;
+      display: block;
+    }
+    .stats-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 1.5rem;
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stats-number {
+      font-size: 2.5rem;
+      font-weight: 700;
+    }
+    .stats-label {
+      font-size: 1rem;
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="card admin-container">
+    <div class="admin-header">
+      <div class="admin-title">
+        <a href="/dashboard.html" class="back-btn">← Back to Scanner</a>
+        <h1>👑 Admin Panel</h1>
+      </div>
+      <div class="user-info">
+        <span class="user-name" id="userDisplay"></span>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+      </div>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <!-- Stats Card -->
+    <div class="stats-card">
+      <div>
+        <div class="stats-label">Total Users</div>
+        <div class="stats-number" id="totalUsers">0</div>
+      </div>
+      <div>
+        <div class="stats-label">Active Today</div>
+        <div class="stats-number" id="activeToday">-</div>
+      </div>
+    </div>
+
+    <!-- Create User Form -->
+    <div class="user-form-card">
+      <h2>➕ Create New User</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="john_doe" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="••••••••" required>
+        </div>
+        <div class="form-group">
+          <label for="name">Full Name</label>
+          <input type="text" id="name" placeholder="John Doe" required>
+        </div>
+        <div class="form-group">
+          <label for="role">Role</label>
+          <select id="role">
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn-create" onclick="createUser()">Create User</button>
+    </div>
+
+    <!-- Users List -->
+    <div class="users-table-card">
+      <h2>👥 Registered Users</h2>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Username</th>
+              <th>Name</th>
+              <th>Role</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="usersTableBody">
+            <tr>
+              <td colspan="6" style="text-align: center; padding: 2rem;">Loading users...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="admin.js"></script>
+</body>
+</html>
