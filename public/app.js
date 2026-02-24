@@ -15,6 +15,9 @@ const clearBtn = document.getElementById('clearTableBtn');
 const downloadBtn = document.getElementById('downloadExcelBtn');
 const userDisplay = document.getElementById('userDisplay');
 const excelUserName = document.getElementById('excelUserName');
+const videoElem = document.getElementById('videoPreview');
+let codeReader = null;
+let pauseScan = false;
 
 function checkAuth() {
   const token = localStorage.getItem('token');
@@ -40,6 +43,46 @@ function checkAuth() {
   }
   
   return true;
+}
+
+function startCameraScan() {
+  if (!videoElem) return;
+  try {
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    codeReader.listVideoInputDevices().then((videoInputDevices) => {
+      const deviceId = videoInputDevices && videoInputDevices.length ? videoInputDevices[0].deviceId : undefined;
+      try {
+        codeReader.decodeFromVideoDevice(deviceId, videoElem, (result, err) => {
+          if (result && !pauseScan) {
+            pauseScan = true;
+            const text = result.getText();
+            if (barcodeInput) barcodeInput.value = text;
+            if (datePicker) datePicker.value = selectedDate;
+            if (extractPanel) extractPanel.style.display = 'block';
+            setMessage('✅ Barcode detected (camera)', 'ok');
+            setTimeout(() => { pauseScan = false; }, 1500);
+          }
+        });
+      } catch (e) {
+        setMessage('Camera scanning failed: ' + (e.message || e), 'error');
+      }
+    }).catch(err => {
+      setMessage('No camera devices found: ' + err.message, 'error');
+    });
+  } catch (e) {
+    setMessage('Camera scanner init error: ' + (e.message || e), 'error');
+  }
+}
+
+function stopCameraScan() {
+  try {
+    if (codeReader) {
+      codeReader.reset();
+      codeReader = null;
+    }
+  } catch (e) {
+    // ignore
+  }
 }
 
 async function fetchUserEntries() {
@@ -321,6 +364,7 @@ async function init() {
   
   await fetchUserEntries();
   setPreviewPlaceholder();
+  startCameraScan();
   
   if (fileInput) {
     fileInput.addEventListener('click', () => { fileInput.value = ''; });
