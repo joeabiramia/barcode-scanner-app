@@ -67,6 +67,7 @@
         <div class="upload-area">
           <div class="camera-area">
             <video id="videoPreview" autoplay playsinline muted></video>
+            <p class="label-sm" style="font-size:0.85rem; color:#3b6e5e; margin-top:4px;">📳 device will vibrate when a barcode is found</p>
           </div>
           <div class="upload-icon">📦</div>
           <label for="barcodeFile" class="file-label">Choose image with barcode</label>
@@ -114,8 +115,9 @@
           </table>
         </div>
         <div class="action-row">
-          <button id="downloadExcelBtn" class="download-btn">⬇ Download My Excel</button>
-          <span style="font-size:0.85rem; color:#3b6e5e;">.xlsx · includes your name</span>
+          <button id="downloadExcelBtn" class="download-btn">⬇ Download / Email My Excel</button>
+          <button id="pushMainBtn" class="download-btn" style="margin-left:8px;">📤 Push to main excel</button>
+          <span style="font-size:0.85rem; color:#3b6e5e;">.xlsx · includes your name; you will be prompted for an email</span>
         </div>
         <div class="excel-note">
           ⭐ Excel file will automatically include your name: <span id="excelUserName"></span>

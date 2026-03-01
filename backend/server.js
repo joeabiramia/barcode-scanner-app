@@ -15,8 +15,12 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
-// File paths - using /data for persistent storage in Docker
-const DATA_DIR = process.env.DATA_DIR || '/data';
+// File paths - using container volume if provided, otherwise fall back to a
+// project-local directory so that a plain `node server.js` run on Windows
+// doesn't write to the root of the filesystem (which often gets cleaned up on
+// reboot).  When running in Docker the compose file still sets DATA_DIR=/data
+// and mounts a volume there, so the behaviour is unchanged.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const ENTRIES_FILE = path.join(DATA_DIR, 'entries.json');
 
@@ -328,6 +332,72 @@ initializeFiles().then(() => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Data directory: ${DATA_DIR}`);
   });
+});
+
+// New route: export current user's entries as an Excel file and email it
+// to an address supplied in the request body.  Requires SMTP configuration via
+// environment variables (EMAIL_HOST/PORT/USER/PASS and optionally EMAIL_FROM
+// or use EMAIL_USER as the sender).
+const XLSX = require('xlsx');
+const nodemailer = require('nodemailer');
+
+// configure transporter once
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST || '',
+  port: parseInt(process.env.EMAIL_PORT || '587', 10),
+  secure: process.env.EMAIL_SECURE === 'true',
+  auth: {
+    user: process.env.EMAIL_USER || '',
+    pass: process.env.EMAIL_PASS || ''
+  }
+});
+
+app.post('/api/send-excel', authenticateToken, async (req, res) => {
+  try {
+    const { to } = req.body;
+    if (!to) {
+      return res.status(400).json({ error: 'Recipient email required' });
+    }
+
+    const data = await fs.readFile(ENTRIES_FILE, 'utf8');
+    const { entries } = JSON.parse(data);
+    const userEntries = entries.filter(e => e.userId === req.user.id);
+
+    if (userEntries.length === 0) {
+      return res.status(400).json({ error: 'No entries to export' });
+    }
+
+    const dataForExcel = userEntries.map(e => ({
+      Barcode: e.barcode,
+      Date: e.date,
+      'Recorded By': e.userName,
+      'User ID': req.user.username
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'BarcodeLog');
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const filename = `barcodes_${req.user.username}_${new Date().toISOString().slice(0,10)}.xlsx`;
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+      to,
+      subject: `Barcode export for ${req.user.username}`,
+      text: 'Please find your exported barcode report attached.',
+      attachments: [
+        {
+          filename,
+          content: buffer
+        }
+      ]
+    });
+
+    res.json({ message: 'Email sent successfully' });
+  } catch (error) {
+    console.error('Email send error:', error);
+    res.status(500).json({ error: 'Failed to send email' });
+  }
 });
 
 // Update user (admin only) - allows changing username, password, name, role
