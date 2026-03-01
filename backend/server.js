@@ -5,27 +5,56 @@ const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
 const fs = require('fs').promises;
 const path = require('path');
+const os = require('os');
+const XLSX = require('xlsx');
+const nodemailer = require('nodemailer');
 
-const app = express();  // <-- THIS MUST COME FIRST!
+const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-this-in-production';
 
-// Middleware - THESE COME NEXT
+// ===== HARDCODED EMAIL CONFIGURATION FOR TESTING =====
+// Replace these with your actual email credentials
+const EMAIL_CONFIG = {
+  host: 'smtp.gmail.com',           // Gmail SMTP server
+  port: 587,                         // TLS port
+  user: 'joe.abiramia@totersapp.com',      // 🔴 REPLACE WITH YOUR EMAIL
+  pass: 'fxyq qndb vmwg fwkw',         // 🔴 REPLACE WITH YOUR APP PASSWORD
+  from: 'joe.abiramia@totersapp.com',      // 🔴 REPLACE WITH YOUR EMAIL
+  exportTo: 'joe.ghosh@totersapp.com'  // Recipient email
+};
+
+// Create transporter with hardcoded config
+const transporter = nodemailer.createTransport({
+  host: EMAIL_CONFIG.host,
+  port: EMAIL_CONFIG.port,
+  secure: false, // true for 465, false for other ports
+  auth: {
+    user: EMAIL_CONFIG.user,
+    pass: EMAIL_CONFIG.pass
+  }
+});
+
+// Test email connection on startup
+transporter.verify(function(error, success) {
+  if (error) {
+    console.log('❌ Email configuration error:');
+    console.log('   Please update EMAIL_CONFIG in server.js with your credentials');
+    console.log('   For Gmail, use an App Password (not your regular password)');
+    console.log('   Error details:', error.message);
+  } else {
+    console.log('✅ Email server is ready to send messages');
+  }
+});
+// ===== END EMAIL CONFIGURATION =====
+
+// Middleware
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
-// File paths - using container volume if provided, otherwise fall back to a
-// project-local directory so that a plain `node server.js` run on Windows
-// doesn't write to the root of the filesystem (which often gets cleaned up on
-// reboot).  When running in Docker the compose file still sets DATA_DIR=/data
-// and mounts a volume there, so the behaviour is unchanged.
-const os = require('os');
-// default storage location: use env var if provided, otherwise pick a folder
-// outside of OneDrive or temporary paths so that restarts won't erase the
-// file.  We use the user's home directory under `.barcode-scanner-data`.
+// Data directory (user's home directory)
 const DATA_DIR = process.env.DATA_DIR || path.join(os.homedir(), '.barcode-scanner-data');
-
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const ENTRIES_FILE = path.join(DATA_DIR, 'entries.json');
 
@@ -33,7 +62,7 @@ const ENTRIES_FILE = path.join(DATA_DIR, 'entries.json');
 async function ensureDataDirectory() {
   try {
     await fs.mkdir(DATA_DIR, { recursive: true });
-    console.log(`Data directory ensured: ${DATA_DIR}`);
+    console.log(`📁 Data directory: ${DATA_DIR}`);
   } catch (error) {
     console.error('Error creating data directory:', error);
   }
@@ -45,9 +74,9 @@ async function initializeFiles() {
   
   try {
     await fs.access(USERS_FILE);
-    console.log('Users file exists');
+    console.log('✅ Users file exists');
   } catch {
-    console.log('Creating users file with default admin');
+    console.log('📝 Creating users file with default admin');
     // Create default admin user
     const hashedPassword = await bcrypt.hash('admin123', 10);
     const defaultUsers = {
@@ -63,13 +92,14 @@ async function initializeFiles() {
       ]
     };
     await fs.writeFile(USERS_FILE, JSON.stringify(defaultUsers, null, 2));
+    console.log('✅ Default admin created (username: admin, password: admin123)');
   }
 
   try {
     await fs.access(ENTRIES_FILE);
-    console.log('Entries file exists');
+    console.log('✅ Entries file exists');
   } catch {
-    console.log('Creating entries file');
+    console.log('📝 Creating entries file');
     await fs.writeFile(ENTRIES_FILE, JSON.stringify({ entries: [] }, null, 2));
   }
 }
@@ -191,6 +221,62 @@ app.get('/api/users', authenticateToken, async (req, res) => {
     res.json(safeUsers);
   } catch (error) {
     console.error('Get users error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update user (admin only)
+app.put('/api/users/:id', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const userId = parseInt(req.params.id);
+    const { username, password, name, role } = req.body;
+
+    const data = await fs.readFile(USERS_FILE, 'utf8');
+    const usersData = JSON.parse(data);
+
+    const userIndex = usersData.users.findIndex(u => u.id === userId);
+    if (userIndex === -1) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const existingUser = usersData.users[userIndex];
+
+    // Prevent renaming the main admin account
+    if (existingUser.username === 'admin' && username && username !== 'admin') {
+      return res.status(400).json({ error: 'Cannot rename main admin user' });
+    }
+
+    // If username change requested, ensure uniqueness
+    if (username && username !== existingUser.username) {
+      if (usersData.users.find(u => u.username === username)) {
+        return res.status(400).json({ error: 'Username already exists' });
+      }
+      usersData.users[userIndex].username = username;
+    }
+
+    if (typeof name === 'string') {
+      usersData.users[userIndex].name = name;
+    }
+
+    if (typeof role === 'string') {
+      usersData.users[userIndex].role = role;
+    }
+
+    if (password) {
+      const hashed = await bcrypt.hash(password, 10);
+      usersData.users[userIndex].password = hashed;
+    }
+
+    await fs.writeFile(USERS_FILE, JSON.stringify(usersData, null, 2));
+
+    const { password: pw, ...safeUser } = usersData.users[userIndex];
+    res.json({ message: 'User updated successfully', user: safeUser });
+  } catch (error) {
+    console.error('Update user error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -321,54 +407,12 @@ app.delete('/api/entries', authenticateToken, async (req, res) => {
   }
 });
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Redirect root to login
-app.get('/', (req, res) => {
-  res.redirect('/login.html');
-});
-
-// Initialize files and start server
-initializeFiles().then(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Data directory: ${DATA_DIR}`);
-  });
-});
-
-// New route: export current user's entries as an Excel file and email it
-// to an address supplied in the request body.  Requires SMTP configuration via
-// environment variables (EMAIL_HOST/PORT/USER/PASS and optionally EMAIL_FROM
-// or use EMAIL_USER as the sender).
-const XLSX = require('xlsx');
-const nodemailer = require('nodemailer');
-
-// configure transporter once
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST || '',
-  port: parseInt(process.env.EMAIL_PORT || '587', 10),
-  secure: process.env.EMAIL_SECURE === 'true',
-  auth: {
-    user: process.env.EMAIL_USER || '',
-    pass: process.env.EMAIL_PASS || ''
-  }
-});
-
-// hard‑coded recipient (can also be overridden via env var)
-const EXPORT_TO = process.env.EXPORT_TO || 'joe.ghosh@totersapp.com';
-
+// Send Excel via email
 app.post('/api/send-excel', authenticateToken, async (req, res) => {
   try {
-    const to = EXPORT_TO;
-
-    // basic SMTP sanity check
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      return res.status(500).json({ error: 'SMTP not configured; please set EMAIL_HOST/USER/PASS' });
-    }
-
+    console.log(`📧 send-excel called by user ${req.user.username}`);
+    
+    // Read user's entries
     const data = await fs.readFile(ENTRIES_FILE, 'utf8');
     const { entries } = JSON.parse(data);
     const userEntries = entries.filter(e => e.userId === req.user.id);
@@ -377,6 +421,7 @@ app.post('/api/send-excel', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'No entries to export' });
     }
 
+    // Prepare data for Excel
     const dataForExcel = userEntries.map(e => ({
       Barcode: e.barcode,
       Date: e.date,
@@ -384,17 +429,19 @@ app.post('/api/send-excel', authenticateToken, async (req, res) => {
       'User ID': req.user.username
     }));
 
+    // Create Excel file
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.json_to_sheet(dataForExcel);
     XLSX.utils.book_append_sheet(workbook, worksheet, 'BarcodeLog');
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
     const filename = `barcodes_${req.user.username}_${new Date().toISOString().slice(0,10)}.xlsx`;
 
-    await transporter.sendMail({
-      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-      to,
+    // Send email using hardcoded config
+    const info = await transporter.sendMail({
+      from: EMAIL_CONFIG.from,
+      to: EMAIL_CONFIG.exportTo,
       subject: `Barcode export for ${req.user.username}`,
-      text: 'Please find your exported barcode report attached.',
+      text: `Hello,\n\nPlease find attached the barcode export for ${req.user.username}.\nTotal entries: ${userEntries.length}\nDate: ${new Date().toLocaleDateString()}\n\nBest regards,\nBarcode Scanner System`,
       attachments: [
         {
           filename,
@@ -403,65 +450,57 @@ app.post('/api/send-excel', authenticateToken, async (req, res) => {
       ]
     });
 
-    res.json({ message: 'Email sent successfully' });
+    console.log(`✅ Email sent successfully to ${EMAIL_CONFIG.exportTo}`);
+    console.log(`   Message ID: ${info.messageId}`);
+    
+    res.json({ 
+      message: 'Email sent successfully', 
+      recipient: EMAIL_CONFIG.exportTo,
+      entriesCount: userEntries.length 
+    });
+    
   } catch (error) {
-    console.error('Email send error:', error);
-    res.status(500).json({ error: 'Failed to send email' });
+    console.error('❌ Email send error:', error);
+    
+    // Provide helpful error message
+    let errorMessage = 'Failed to send email';
+    if (error.code === 'EAUTH') {
+      errorMessage = 'Email authentication failed. Please check your email credentials.';
+    } else if (error.code === 'ESOCKET') {
+      errorMessage = 'Could not connect to email server. Check network/email host.';
+    }
+    
+    res.status(500).json({ 
+      error: errorMessage,
+      detail: error.message,
+      hint: 'Update EMAIL_CONFIG in server.js with valid credentials'
+    });
   }
 });
 
-// Update user (admin only) - allows changing username, password, name, role
-app.put('/api/users/:id', authenticateToken, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    emailConfigured: true,
+    emailRecipient: EMAIL_CONFIG.exportTo
+  });
+});
 
-    const userId = parseInt(req.params.id);
-    const { username, password, name, role } = req.body;
+// Redirect root to login
+app.get('/', (req, res) => {
+  res.redirect('/login.html');
+});
 
-    const data = await fs.readFile(USERS_FILE, 'utf8');
-    const usersData = JSON.parse(data);
-
-    const userIndex = usersData.users.findIndex(u => u.id === userId);
-    if (userIndex === -1) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const existingUser = usersData.users[userIndex];
-
-    // Prevent renaming the main admin account
-    if (existingUser.username === 'admin' && username && username !== 'admin') {
-      return res.status(400).json({ error: 'Cannot rename main admin user' });
-    }
-
-    // If username change requested, ensure uniqueness
-    if (username && username !== existingUser.username) {
-      if (usersData.users.find(u => u.username === username)) {
-        return res.status(400).json({ error: 'Username already exists' });
-      }
-      usersData.users[userIndex].username = username;
-    }
-
-    if (typeof name === 'string') {
-      usersData.users[userIndex].name = name;
-    }
-
-    if (typeof role === 'string') {
-      usersData.users[userIndex].role = role;
-    }
-
-    if (password) {
-      const hashed = await bcrypt.hash(password, 10);
-      usersData.users[userIndex].password = hashed;
-    }
-
-    await fs.writeFile(USERS_FILE, JSON.stringify(usersData, null, 2));
-
-    const { password: pw, ...safeUser } = usersData.users[userIndex];
-    res.json({ message: 'User updated successfully', user: safeUser });
-  } catch (error) {
-    console.error('Update user error:', error);
-    res.status(500).json({ error: 'Server error' });
-  }
+// Initialize and start server
+initializeFiles().then(() => {
+  app.listen(PORT, () => {
+    console.log('\n🚀 Server is running!');
+    console.log(`📡 Port: ${PORT}`);
+    console.log(`📁 Data: ${DATA_DIR}`);
+    console.log(`📧 Email recipient: ${EMAIL_CONFIG.exportTo}`);
+    console.log(`\n🌐 Access the app at: http://localhost:${PORT}`);
+    console.log(`🔑 Default login: admin / admin123\n`);
+  });
 });

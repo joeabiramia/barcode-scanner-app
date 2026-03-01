@@ -84,7 +84,15 @@ docker-compose up --build
 
 ## Notes
 
-- Sending email requires valid SMTP configuration in the environment.
+- Sending email requires valid SMTP configuration in the environment.  If
+  exports appear not to send you will see an error message in the UI, and the
+  server log will include additional details (look for `send-excel called by`
+  and any `Email send error:` lines).
+
+- Be sure to set `EXPORT_EMAIL` in `public/app.js` (or the `EXPORT_TO`
+  environment variable) to a real mailbox; the default is a dummy address and
+  mail providers will drop or reject it silently.
+
 - The admin user cannot be deleted or renamed, and its credentials persist too.
 
 ---
