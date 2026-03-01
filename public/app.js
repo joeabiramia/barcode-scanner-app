@@ -15,27 +15,11 @@ const clearBtn = document.getElementById('clearTableBtn');
 const downloadBtn = document.getElementById('downloadExcelBtn');
 const userDisplay = document.getElementById('userDisplay');
 const excelUserName = document.getElementById('excelUserName');
-const pushMainBtn = document.getElementById('pushMainBtn');
+// (pushMainBtn removed)
 const videoElem = document.getElementById('videoPreview');
 let codeReader = null;
 let pauseScan = false;
 let audioCtx = null;
-// --- Microsoft Graph / OneDrive push config ---
-// Replace CLIENT_ID with your Azure AD app's client id, or call `setClientId()` at runtime.
-let CLIENT_ID = null; // e.g. 'your-client-id-here'
-const REDIRECT_URI = window.location.origin + '/dashboard.html';
-const SCOPES = 'openid profile offline_access Files.ReadWrite.All';
-
-function setClientId(id) {
-  CLIENT_ID = id;
-  localStorage.setItem('ms_client_id', id);
-}
-
-// Try load saved client id
-if (!CLIENT_ID) {
-  const saved = localStorage.getItem('ms_client_id');
-  if (saved) CLIENT_ID = saved;
-}
 
 function playBeep() {
   try {
@@ -100,7 +84,10 @@ function startCameraScan() {
             const text = result.getText();
             if (barcodeInput) barcodeInput.value = text;
             if (datePicker) datePicker.value = selectedDate;
-            if (extractPanel) extractPanel.style.display = 'block';
+            if (extractPanel) {
+              extractPanel.style.display = 'block';
+              ensureAddBtnListener();
+            }
             try { playBeep(); } catch (e) {}
             // vibration is already included; make sure it runs on supported devices
             if (navigator.vibrate) { try { navigator.vibrate(160); } catch(e){} }
@@ -295,150 +282,7 @@ async function scanBarcodeFromFile(file) {
 async function handleFileSelect(e) {
   const file = e.target.files[0];
 
-  // ---------------- Microsoft OAuth PKCE helpers and push ----------------
-  function base64UrlEncode(buffer) {
-    // buffer may be ArrayBuffer or Uint8Array
-    const bytes = (buffer instanceof ArrayBuffer) ? new Uint8Array(buffer) : buffer;
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
 
-  async function sha256plain(text) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(text);
-    return await crypto.subtle.digest('SHA-256', data);
-  }
-
-  function genCodeVerifier() {
-    const array = new Uint8Array(56);
-    crypto.getRandomValues(array);
-    return base64UrlEncode(array);
-  }
-
-  async function buildAuthUrl() {
-    if (!CLIENT_ID) {
-      const id = prompt('Enter your Azure AD Client ID (app registration):');
-      if (!id) return null;
-      setClientId(id);
-    }
-    const code_verifier = genCodeVerifier();
-    sessionStorage.setItem('ms_code_verifier', code_verifier);
-    const hash = await sha256plain(code_verifier);
-    const challenge = base64UrlEncode(hash);
-    const params = new URLSearchParams({
-      client_id: CLIENT_ID,
-      response_type: 'code',
-      redirect_uri: REDIRECT_URI,
-      response_mode: 'query',
-      scope: SCOPES,
-      code_challenge: challenge,
-      code_challenge_method: 'S256'
-    });
-    return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params.toString()}`;
-  }
-
-  async function exchangeCodeForToken(code) {
-    const code_verifier = sessionStorage.getItem('ms_code_verifier');
-    if (!code_verifier) throw new Error('Missing PKCE code_verifier');
-    const body = new URLSearchParams({
-      client_id: CLIENT_ID,
-      grant_type: 'authorization_code',
-      code: code,
-      redirect_uri: REDIRECT_URI,
-      code_verifier: code_verifier
-    });
-    const resp = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body.toString()
-    });
-    if (!resp.ok) throw new Error('Token exchange failed');
-    const data = await resp.json();
-    sessionStorage.setItem('ms_access_token', data.access_token);
-    sessionStorage.setItem('ms_refresh_token', data.refresh_token || '');
-    return data;
-  }
-
-  async function completeOAuthIfNeeded() {
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get('code');
-    if (code && CLIENT_ID) {
-      try {
-        setMessage('Completing Microsoft sign-in...', 'loading');
-        await exchangeCodeForToken(code);
-        setMessage('Microsoft sign-in completed', 'ok');
-        url.searchParams.delete('code');
-        window.history.replaceState({}, document.title, url.toString());
-      } catch (e) {
-        setMessage('OAuth completion failed: ' + e.message, 'error');
-      }
-    }
-  }
-
-  function ensureAccessToken() {
-    return sessionStorage.getItem('ms_access_token');
-  }
-
-  function startAuthRedirect() {
-    buildAuthUrl().then(url => {
-      if (url) window.location.href = url;
-    }).catch(err => setMessage('Auth start failed: ' + err.message, 'error'));
-  }
-
-  function shareUrlToId(shareUrl) {
-    const b64 = btoa(unescape(encodeURIComponent(shareUrl))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    return `u!${b64}`;
-  }
-
-  async function pushToMainExcel() {
-    if (!confirm('Push all current entries to the main Excel workbook?')) return;
-    const access = ensureAccessToken();
-    if (!access) { startAuthRedirect(); return; }
-    setMessage('Pushing to main workbook...', 'loading');
-    try {
-      const shareLink = 'https://1drv.ms/x/c/2f4ac71fffd6fb02/IQCu0l_ZxidBT4K-OppuQfLkATnojFHCf80IAb-bhi1cFN4';
-      const shareId = shareUrlToId(shareLink);
-      let resp = await fetch(`https://graph.microsoft.com/v1.0/shares/${shareId}/driveItem`, {
-        headers: { 'Authorization': `Bearer ${access}` }
-      });
-      if (!resp.ok) throw new Error('Failed to resolve shared workbook');
-      const item = await resp.json();
-      const itemId = item.id;
-      resp = await fetch(`https://graph.microsoft.com/v1.0/drive/items/${itemId}/workbook/worksheets('Sheet1')/usedRange`, {
-        headers: { 'Authorization': `Bearer ${access}` }
-      });
-      let nextRow = 1;
-      if (resp.ok) {
-        const used = await resp.json();
-        const values = used.values || [];
-        nextRow = (values.length || 0) + 1;
-      }
-      const rows = currentEntries.map(e => {
-        const row = new Array(8).fill('');
-        row[0] = e.barcode;
-        row[1] = e.date;
-        row[7] = e.user || (currentUser && currentUser.name) || '';
-        return row;
-      });
-      if (rows.length === 0) { setMessage('No entries to push', 'error'); return; }
-      const endRow = nextRow + rows.length - 1;
-      const address = `A${nextRow}:H${endRow}`;
-      resp = await fetch(`https://graph.microsoft.com/v1.0/drive/items/${itemId}/workbook/worksheets('Sheet1')/range(address='${address}')`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${access}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ values: rows })
-      });
-      if (!resp.ok) throw new Error('Failed to write rows to workbook');
-      setMessage(`Pushed ${rows.length} rows to main workbook`, 'ok');
-    } catch (e) {
-      setMessage('Push failed: ' + e.message, 'error');
-      if (e.message && e.message.indexOf('invalid_grant') >= 0) startAuthRedirect();
-    }
-  }
   if (!file) {
     setPreviewPlaceholder();
     if (extractPanel) extractPanel.style.display = 'none';
@@ -461,7 +305,10 @@ async function handleFileSelect(e) {
     setMessage('✅ Barcode detected!', 'ok');
     if (barcodeInput) barcodeInput.value = barcodeText;
     if (datePicker) datePicker.value = selectedDate;
-    if (extractPanel) extractPanel.style.display = 'block';
+    if (extractPanel) {
+      extractPanel.style.display = 'block';
+      ensureAddBtnListener();
+    }
     try { playBeep(); } catch (e) {}
     if (navigator.vibrate) { try { navigator.vibrate(160); } catch(e){} }
   } catch (error) {
@@ -477,6 +324,7 @@ function handleDateChange(e) {
 }
 
 async function handleAddEntry() {
+  console.debug('handleAddEntry called');
   const barcodeVal = barcodeInput ? barcodeInput.value.trim() : '';
   if (!barcodeVal) {
     setMessage('Please scan or enter a barcode value', 'error');
@@ -490,6 +338,7 @@ async function handleAddEntry() {
   const saved = await saveEntry(barcodeVal, selectedDate);
   
   if (saved) {
+    console.debug('entry saved, pushing locally');
     currentEntries.push({ 
       barcode: barcodeVal, 
       date: selectedDate,
@@ -574,6 +423,13 @@ function logout() {
   window.location.href = '/login.html';
 }
 
+// ensure add button always has listener attached
+function ensureAddBtnListener() {
+  if (!addBtn) return;
+  addBtn.removeEventListener('click', handleAddEntry);
+  addBtn.addEventListener('click', handleAddEntry);
+}
+
 async function init() {
   if (!checkAuth()) return;
   
@@ -596,10 +452,8 @@ async function init() {
     datePicker.addEventListener('change', handleDateChange);
   }
   
-  if (addBtn) {
-    addBtn.addEventListener('click', handleAddEntry);
-  }
-  
+  ensureAddBtnListener();
+
   if (clearBtn) {
     clearBtn.addEventListener('click', handleClearTable);
   }
@@ -607,9 +461,7 @@ async function init() {
   if (downloadBtn) {
     downloadBtn.addEventListener('click', handleDownload);
   }
-  if (pushMainBtn) {
-    pushMainBtn.addEventListener('click', pushToMainExcel);
-  }
+  // pushMainBtn removed; feature no longer accessible from UI
 }
 
 window.logout = logout;

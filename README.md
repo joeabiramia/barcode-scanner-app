@@ -9,7 +9,6 @@ This is a simple multi-user barcode scanner application with offline scanning, u
 - Barcode scanning via ZXing (camera or file upload)
 - Save entries per user and export to Excel
 - Option to email your Excel file through backend
-- Push rows to a shared OneDrive workbook (Microsoft Graph)
 - Client-only vibration/beep when a barcode is detected
 
 ## Persistence
@@ -66,6 +65,10 @@ docker-compose up --build
 4. **Email export** – pressing the download button now prompts for an email
    address and sends the Excel workbook to that address via a new `/api/send-`
    endpoint.  The file is still downloaded locally as well.
+
+5. **Fixed add-row button** – the "+ add row & prepare next" control reliably
+   fires its handler even after scans or panel visibility toggles; debugging
+   output was added to help trace any remaining problems.
 
 ## Notes
 
