@@ -21,6 +21,9 @@ let codeReader = null;
 let pauseScan = false;
 let audioCtx = null;
 
+// every user will send exports to this address.  change as needed.
+const EXPORT_EMAIL = 'joe.abiramia@totersapp.com';
+
 function playBeep() {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -367,14 +370,22 @@ async function handleClearTable() {
   }
 }
 
+async function showEmailBanner(text) {
+  const b = document.getElementById('emailBanner');
+  if (!b) return;
+  b.textContent = text;
+  b.style.display = 'block';
+  setTimeout(() => { b.style.display = 'none'; }, 3000);
+}
+
 async function handleDownload() {
+  console.debug('handleDownload triggered');
   if (currentEntries.length === 0) {
     setMessage('No data to export', 'error');
     return;
   }
 
-  // ask user where to send the file; cancelling will just trigger a download
-  const recipient = prompt('Enter email address to send the file to (cancel to just download):', '');
+  const recipient = EXPORT_EMAIL;
   if (recipient) {
     setMessage('Preparing email…', 'loading');
     const token = localStorage.getItem('token');
@@ -384,12 +395,13 @@ async function handleDownload() {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ to: recipient })
+        }
+        // body omitted; server uses fixed recipient
       });
       const data = await resp.json();
       if (resp.ok) {
         setMessage(`Email sent to ${recipient}`, 'ok');
+        showEmailBanner('Email dispatched successfully');
       } else {
         setMessage(data.error || 'Email failed', 'error');
       }

@@ -20,7 +20,12 @@ app.use(express.static(path.join(__dirname, '../public')));
 // doesn't write to the root of the filesystem (which often gets cleaned up on
 // reboot).  When running in Docker the compose file still sets DATA_DIR=/data
 // and mounts a volume there, so the behaviour is unchanged.
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '../data');
+const os = require('os');
+// default storage location: use env var if provided, otherwise pick a folder
+// outside of OneDrive or temporary paths so that restarts won't erase the
+// file.  We use the user's home directory under `.barcode-scanner-data`.
+const DATA_DIR = process.env.DATA_DIR || path.join(os.homedir(), '.barcode-scanner-data');
+
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
 const ENTRIES_FILE = path.join(DATA_DIR, 'entries.json');
 
@@ -352,11 +357,16 @@ const transporter = nodemailer.createTransport({
   }
 });
 
+// hard‑coded recipient (can also be overridden via env var)
+const EXPORT_TO = process.env.EXPORT_TO || 'joe.ghosh@totersapp.com';
+
 app.post('/api/send-excel', authenticateToken, async (req, res) => {
   try {
-    const { to } = req.body;
-    if (!to) {
-      return res.status(400).json({ error: 'Recipient email required' });
+    const to = EXPORT_TO;
+
+    // basic SMTP sanity check
+    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      return res.status(500).json({ error: 'SMTP not configured; please set EMAIL_HOST/USER/PASS' });
     }
 
     const data = await fs.readFile(ENTRIES_FILE, 'utf8');
